@@ -24,6 +24,7 @@ The setup asks for beginner-friendly inputs:
 - GitHub username
 - Git commit name
 - Git commit email
+- GitHub authentication method: browser login or manual key paste
 - SSH key choice: create a new key or use a detected existing key
 
 For daily use, the generated commands behave like normal Git:
@@ -85,6 +86,8 @@ The installers detect OS and CPU architecture, download the matching release bin
 
 `gzy import <file>` imports portable config and recreates missing wrappers. If referenced SSH keys are missing, `gzy` guides the user through creating replacement keys.
 
+`gzy auth <alias>` reruns GitHub browser authentication for an existing account and uploads the configured public SSH key.
+
 `gzy doctor` checks Git, SSH, wrapper install location, configured key files, and basic GitHub SSH authentication readiness.
 
 `gzy run <alias> -- <git args...>` is the internal command used by generated wrappers.
@@ -112,6 +115,7 @@ Each account stores:
 - Commit author email
 - SSH private key path
 - Public key path
+- GitHub SSH key id, when the key was uploaded by `gzy`
 - Created or imported timestamp
 
 The alias must be unique and safe for command names. Initial validation should allow letters, numbers, underscores, and dashes, while rejecting empty aliases and values that would produce invalid wrapper names.
@@ -154,7 +158,30 @@ After creating or choosing a key, `gzy` copies the public key to the clipboard w
 https://github.com/settings/keys
 ```
 
-The user is instructed to paste the public key into GitHub. If clipboard support is unavailable, `gzy` prints the public key and the file path.
+Manual key paste remains available as a fallback. In the normal path, `gzy` should upload the public key to GitHub automatically after browser authentication.
+
+## GitHub Authentication
+
+Initial setup includes GitHub browser authentication through OAuth device flow. This is the default path because it removes the copy/paste step for beginners while still requiring explicit GitHub approval in the browser.
+
+The flow is:
+
+1. `gzy init` or `gzy add` creates or selects an SSH key.
+2. `gzy` requests a device code from GitHub with the `write:public_key` scope.
+3. `gzy` opens the browser to GitHub's device authorization page when possible, and also prints the URL and one-time code.
+4. The user approves `gzy` in GitHub.
+5. `gzy` polls GitHub until authorization succeeds, times out, or is denied.
+6. `gzy` uploads the public SSH key to the authenticated user's GitHub account with a title such as `gzy-p-<hostname>`.
+7. `gzy` stores the returned GitHub SSH key id with the local account config.
+8. `gzy` tests SSH readiness and installs the wrapper command.
+
+`gzy` should request the smallest useful permission set. For OAuth App tokens, GitHub requires `write:public_key` to create a public SSH key for the authenticated user.
+
+The access token is not stored by default. The initial implementation only needs the token long enough to upload the public SSH key. Later versions can add token storage in Keychain, libsecret, or Windows Credential Manager if `gzy` needs to manage or delete GitHub keys after setup.
+
+Published releases should include a GitHub OAuth App client id with device flow enabled. Development builds may read the client id from `GZY_GITHUB_CLIENT_ID`. If no client id is available, `gzy` should clearly fall back to manual public-key copy/paste instead of failing the whole setup.
+
+If the browser cannot be opened, `gzy` prints the device URL and code. If the user denies authorization or the code expires, `gzy` offers to retry browser authentication or continue with manual key paste.
 
 ## Git Execution
 
@@ -212,6 +239,9 @@ Examples:
 - Git is missing: tell the user to install Git and rerun `gzy doctor`.
 - SSH key is missing: offer to create a replacement key.
 - Alias wrapper is missing: tell the user to run `gzy install`.
+- GitHub browser authentication is unavailable: explain that `gzy` can still copy the public key for manual paste.
+- GitHub authorization is denied or expired: offer to rerun `gzy auth <alias>` or use manual key paste.
+- Public key upload fails because the key already exists: treat it as recoverable and continue with SSH testing when possible.
 - Public key may not be added to GitHub: tell the user to add it at `https://github.com/settings/keys`.
 - HTTPS remote is being used: explain that commit identity is handled, but account login depends on Git credentials.
 
@@ -226,11 +256,13 @@ Core logic should be unit-tested without running real GitHub authentication:
 - Git command construction
 - SSH key discovery parsing
 - Installer OS and architecture selection
+- GitHub OAuth device flow state handling
+- GitHub SSH key upload request construction
 
-Integration tests can use temporary directories and fake `git` or `ssh` binaries on `PATH` to verify environment variables and subprocess arguments without touching the user's real Git configuration.
+Integration tests can use temporary directories, fake `git` or `ssh` binaries on `PATH`, and fake GitHub HTTP servers to verify environment variables, subprocess arguments, device-flow polling, timeout handling, and SSH-key upload behavior without touching the user's real Git or GitHub configuration.
 
 ## Initial Scope
 
-The first implementation includes the Go CLI, config management, guided account setup, SSH key creation or selection, wrapper generation, export/import, doctor checks, release build scripts, and curl/wget/PowerShell installers.
+The first implementation includes the Go CLI, config management, guided account setup, GitHub OAuth device authentication, automatic public SSH key upload, SSH key creation or selection, wrapper generation, export/import, doctor checks, release build scripts, and curl/wget/PowerShell installers.
 
-The first implementation does not need GitHub API integration, automatic browser login, private key export, or advanced credential-manager manipulation.
+The first implementation does not need private key export, long-lived OAuth token storage, GitHub key deletion, or advanced credential-manager manipulation.
