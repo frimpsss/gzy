@@ -6,7 +6,9 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -153,28 +155,86 @@ func (a *App) RunGit(alias string, args []string) (int, error) {
 
 func (a *App) setupService() setup.Service {
 	return setup.Service{
-		Prompts:  terminalPrompter{in: a.cfg.Stdin, out: a.cfg.Stdout},
-		Store:    fileStore{path: a.cfg.ConfigPath},
-		Keys:     keyAdapter{paths: paths.FromOS(), manager: sshkeys.Manager{}},
-		Wrappers: wrapperAdapter{goos: a.cfg.GOOS, binDir: a.cfg.BinDir, gzyPath: a.cfg.GZYPath},
-		GitHub:   githubAdapter{clientID: a.cfg.GitHubClientID, out: a.cfg.Stdout},
-		Stdout:   a.cfg.Stdout,
+		Prompts:     newTerminalPrompter(a.cfg.Stdin, a.cfg.Stdout),
+		Store:       fileStore{path: a.cfg.ConfigPath},
+		Keys:        keyAdapter{paths: paths.FromOS(), manager: sshkeys.Manager{}},
+		Wrappers:    wrapperAdapter{goos: a.cfg.GOOS, binDir: a.cfg.BinDir, gzyPath: a.cfg.GZYPath},
+		GitHub:      githubAdapter{clientID: a.cfg.GitHubClientID, out: a.cfg.Stdout},
+		Stdout:      a.cfg.Stdout,
+		GitIdentity: defaultGitIdentity,
 	}
 }
 
 type terminalPrompter struct {
-	in  io.Reader
+	in  *bufio.Reader
 	out io.Writer
 }
 
-func (p terminalPrompter) Ask(key string, label string) (string, error) {
-	fmt.Fprintf(p.out, "%s: ", label)
-	reader := bufio.NewReader(p.in)
-	text, err := reader.ReadString('\n')
-	if err != nil && len(text) == 0 {
+func newTerminalPrompter(in io.Reader, out io.Writer) terminalPrompter {
+	return terminalPrompter{in: bufio.NewReader(in), out: out}
+}
+
+func (p terminalPrompter) AskRequired(key string, label string) (string, error) {
+	for {
+		fmt.Fprintf(p.out, "%s: ", label)
+		text, err := p.readLine()
+		if err != nil && text == "" {
+			return "", err
+		}
+		if text != "" {
+			return text, nil
+		}
+		fmt.Fprintln(p.out, "  please enter a value")
+	}
+}
+
+func (p terminalPrompter) AskWithDefault(key string, label string, def string) (string, error) {
+	if def != "" {
+		fmt.Fprintf(p.out, "%s [%s]: ", label, def)
+	} else {
+		fmt.Fprintf(p.out, "%s: ", label)
+	}
+	text, err := p.readLine()
+	if err != nil && text == "" {
 		return "", err
 	}
-	return strings.TrimSpace(text), nil
+	if text == "" {
+		if def == "" {
+			return p.AskRequired(key, label)
+		}
+		return def, nil
+	}
+	return text, nil
+}
+
+func (p terminalPrompter) AskChoice(key string, label string, choices []setup.Choice) (string, error) {
+	for {
+		fmt.Fprintln(p.out, label+":")
+		for i, c := range choices {
+			fmt.Fprintf(p.out, "  %d) %s\n", i+1, c.Label)
+		}
+		fmt.Fprintf(p.out, "Choose 1-%d: ", len(choices))
+		text, err := p.readLine()
+		if err != nil && text == "" {
+			return "", err
+		}
+		n, convErr := strconv.Atoi(text)
+		if convErr == nil && n >= 1 && n <= len(choices) {
+			return choices[n-1].Value, nil
+		}
+		fmt.Fprintf(p.out, "  please enter a number between 1 and %d\n", len(choices))
+	}
+}
+
+func (p terminalPrompter) readLine() (string, error) {
+	line, err := p.in.ReadString('\n')
+	return strings.TrimSpace(line), err
+}
+
+func defaultGitIdentity() (string, string) {
+	name, _ := exec.Command("git", "config", "--global", "user.name").Output()
+	email, _ := exec.Command("git", "config", "--global", "user.email").Output()
+	return strings.TrimSpace(string(name)), strings.TrimSpace(string(email))
 }
 
 type fileStore struct{ path string }

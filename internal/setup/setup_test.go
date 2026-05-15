@@ -57,7 +57,18 @@ func NewStaticPrompter(answers map[string]string) StaticPrompter {
 	return StaticPrompter{Answers: answers}
 }
 
-func (p StaticPrompter) Ask(key string, label string) (string, error) {
+func (p StaticPrompter) AskRequired(key string, label string) (string, error) {
+	return p.Answers[key], nil
+}
+
+func (p StaticPrompter) AskWithDefault(key string, label string, def string) (string, error) {
+	if v, ok := p.Answers[key]; ok && v != "" {
+		return v, nil
+	}
+	return def, nil
+}
+
+func (p StaticPrompter) AskChoice(key string, label string, choices []Choice) (string, error) {
 	return p.Answers[key], nil
 }
 

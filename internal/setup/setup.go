@@ -4,13 +4,22 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/frimpsss/gzy/internal/config"
 )
 
+type Choice struct {
+	Value string
+	Label string
+}
+
 type Prompter interface {
-	Ask(key string, label string) (string, error)
+	AskRequired(key string, label string) (string, error)
+	AskWithDefault(key string, label string, def string) (string, error)
+	AskChoice(key string, label string, choices []Choice) (string, error)
 }
 
 type Store interface {
@@ -33,13 +42,14 @@ type GitHubAuthenticator interface {
 }
 
 type Service struct {
-	Prompts  Prompter
-	Store    Store
-	Keys     KeyManager
-	Wrappers WrapperInstaller
-	GitHub   GitHubAuthenticator
-	Stdout   io.Writer
-	Now      func() time.Time
+	Prompts     Prompter
+	Store       Store
+	Keys        KeyManager
+	Wrappers    WrapperInstaller
+	GitHub      GitHubAuthenticator
+	Stdout      io.Writer
+	Now         func() time.Time
+	GitIdentity func() (name string, email string)
 }
 
 func (s Service) Init() error {
@@ -47,40 +57,59 @@ func (s Service) Init() error {
 }
 
 func (s Service) Add() error {
-	alias, err := s.Prompts.Ask("alias", "Alias command suffix")
+	alias, err := s.Prompts.AskRequired("alias", "Alias suffix (e.g. 'p' creates the command 'git-p')")
 	if err != nil {
 		return err
 	}
 	if err := config.ValidateAlias(alias); err != nil {
 		return err
 	}
-	githubUser, err := s.Prompts.Ask("githubUser", "GitHub username")
+	githubUser, err := s.Prompts.AskRequired("githubUser", "GitHub username for this account")
 	if err != nil {
 		return err
 	}
-	name, err := s.Prompts.Ask("name", "Git commit name")
+
+	defaultName, defaultEmail := s.gitIdentity()
+	name, err := s.Prompts.AskWithDefault("name", "Git commit name (the Author shown in 'git log')", defaultName)
 	if err != nil {
 		return err
 	}
-	email, err := s.Prompts.Ask("email", "Git commit email")
+	email, err := s.Prompts.AskWithDefault("email", "Git commit email (the Author email shown in 'git log')", defaultEmail)
 	if err != nil {
 		return err
 	}
-	keyChoice, err := s.Prompts.Ask("keyChoice", "SSH key choice")
-	if err != nil {
-		return err
-	}
-	authChoice, err := s.Prompts.Ask("authChoice", "GitHub authentication method")
+
+	keyChoice, err := s.Prompts.AskChoice("keyChoice", "SSH key for this account", []Choice{
+		{Value: "create", Label: "Create a new ed25519 SSH key (recommended)"},
+		{Value: "existing", Label: "Use an existing SSH key already on disk"},
+	})
 	if err != nil {
 		return err
 	}
 
 	privateKey, publicKey := s.Keys.DefaultKeyPair(alias)
-	if keyChoice == "create" {
+	switch keyChoice {
+	case "create":
 		if err := s.Keys.Create(privateKey, email); err != nil {
 			return err
 		}
+	case "existing":
+		defaultExisting := defaultExistingKeyPath()
+		privateKey, err = s.Prompts.AskWithDefault("privateKeyPath", "Path to existing private key", defaultExisting)
+		if err != nil {
+			return err
+		}
+		publicKey = privateKey + ".pub"
 	}
+
+	authChoice, err := s.Prompts.AskChoice("authChoice", "Register this SSH key with GitHub", []Choice{
+		{Value: "browser", Label: "Browser: open GitHub and upload the key automatically"},
+		{Value: "manual", Label: "Manual: print the public key for you to paste at github.com/settings/keys"},
+	})
+	if err != nil {
+		return err
+	}
+
 	account := config.Account{
 		Alias:      alias,
 		Command:    "git-" + alias,
@@ -105,6 +134,11 @@ func (s Service) Add() error {
 			return err
 		}
 		cfg.Accounts[len(cfg.Accounts)-1].GitHubKeyID = keyID
+	} else if authChoice == "manual" && s.Stdout != nil {
+		pub, err := s.Keys.ReadPublic(account.PublicKey)
+		if err == nil {
+			fmt.Fprintf(s.Stdout, "\nAdd this public key at https://github.com/settings/keys :\n\n%s\n\n", pub)
+		}
 	}
 	if err := s.Store.Save(cfg); err != nil {
 		return err
@@ -146,4 +180,19 @@ func (s Service) now() time.Time {
 		return s.Now()
 	}
 	return time.Now()
+}
+
+func (s Service) gitIdentity() (string, string) {
+	if s.GitIdentity != nil {
+		return s.GitIdentity()
+	}
+	return "", ""
+}
+
+func defaultExistingKeyPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".ssh", "id_ed25519")
 }
