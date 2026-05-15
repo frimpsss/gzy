@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -59,6 +60,94 @@ func TestDeviceFlowSuccessAndKeyUpload(t *testing.T) {
 	}
 	if key.ID != 42 || uploadedKey != "ssh-ed25519 AAAATEST" {
 		t.Fatalf("key=%#v uploaded=%q", key, uploadedKey)
+	}
+}
+
+func TestUploadKeyRecoversWhenKeyAlreadyOnGitHub(t *testing.T) {
+	publicKey := "ssh-ed25519 AAAAEXISTING me@example.com"
+	listed := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "POST /user/keys":
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			_, _ = w.Write([]byte(`{"message":"Validation Failed","errors":[{"resource":"PublicKey","code":"custom","field":"key","message":"key is already in use"}]}`))
+		case "GET /user/keys":
+			listed = true
+			_ = json.NewEncoder(w).Encode([]KeyResponse{
+				{ID: 7, Key: "ssh-ed25519 AAAAOTHER", Title: "other"},
+				{ID: 99, Key: "ssh-ed25519 AAAAEXISTING", Title: "gzy-p"},
+			})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := Client{BaseURL: server.URL, HTTP: server.Client()}
+	got, err := client.UploadKey("token", "gzy-p", publicKey)
+	if err != nil {
+		t.Fatalf("UploadKey() error = %v", err)
+	}
+	if got.ID != 99 {
+		t.Fatalf("ID = %d, want 99", got.ID)
+	}
+	if !listed {
+		t.Fatalf("expected fallback GET /user/keys")
+	}
+}
+
+func TestUploadKeyErrorIncludesGitHubBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(`{"message":"Validation Failed","errors":[{"message":"key is invalid"}]}`))
+	}))
+	defer server.Close()
+
+	client := Client{BaseURL: server.URL, HTTP: server.Client()}
+	_, err := client.UploadKey("token", "gzy-p", "ssh-ed25519 BADKEY")
+	if err == nil {
+		t.Fatalf("UploadKey() error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "key is invalid") {
+		t.Fatalf("error %q should include GitHub's message", err.Error())
+	}
+}
+
+func TestStartDeviceFlowSendsConfiguredScopes(t *testing.T) {
+	var captured string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/login/device/code" {
+			_ = r.ParseForm()
+			captured = r.Form.Get("scope")
+			_ = json.NewEncoder(w).Encode(DeviceCode{DeviceCode: "x", UserCode: "y", VerificationURI: "z", ExpiresIn: 60, Interval: 1})
+		}
+	}))
+	defer server.Close()
+	client := Client{ClientID: "id", BaseURL: server.URL, HTTP: server.Client(), Scopes: []string{"write:public_key", "repo"}}
+	if _, err := client.StartDeviceFlow(); err != nil {
+		t.Fatalf("StartDeviceFlow() error = %v", err)
+	}
+	if captured != "write:public_key repo" {
+		t.Fatalf("scope = %q, want %q", captured, "write:public_key repo")
+	}
+}
+
+func TestStartDeviceFlowDefaultsToWritePublicKey(t *testing.T) {
+	var captured string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/login/device/code" {
+			_ = r.ParseForm()
+			captured = r.Form.Get("scope")
+			_ = json.NewEncoder(w).Encode(DeviceCode{DeviceCode: "x", UserCode: "y", VerificationURI: "z", ExpiresIn: 60, Interval: 1})
+		}
+	}))
+	defer server.Close()
+	client := Client{ClientID: "id", BaseURL: server.URL, HTTP: server.Client()}
+	if _, err := client.StartDeviceFlow(); err != nil {
+		t.Fatalf("StartDeviceFlow() error = %v", err)
+	}
+	if captured != "write:public_key" {
+		t.Fatalf("scope = %q, want %q", captured, "write:public_key")
 	}
 }
 

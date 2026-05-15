@@ -38,7 +38,7 @@ type WrapperInstaller interface {
 }
 
 type GitHubAuthenticator interface {
-	UploadWithDeviceFlow(title string, publicKey string) (int64, error)
+	UploadWithDeviceFlow(alias string, publicKey string) (int64, error)
 }
 
 type Service struct {
@@ -90,7 +90,30 @@ func (s Service) Add() error {
 	privateKey, publicKey := s.Keys.DefaultKeyPair(alias)
 	switch keyChoice {
 	case "create":
-		if err := s.Keys.Create(privateKey, email); err != nil {
+		if _, err := os.Stat(privateKey); err == nil {
+			label := fmt.Sprintf("An SSH key already exists at %s", privateKey)
+			choice, err := s.Prompts.AskChoice("existingKeyChoice", label, []Choice{
+				{Value: "reuse", Label: "Reuse the existing key"},
+				{Value: "overwrite", Label: "Overwrite it with a new key (the old key is deleted)"},
+			})
+			if err != nil {
+				return err
+			}
+			if choice == "overwrite" {
+				for _, path := range []string{privateKey, publicKey} {
+					if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+						return err
+					}
+				}
+				if err := s.Keys.Create(privateKey, email); err != nil {
+					return err
+				}
+			}
+		} else if os.IsNotExist(err) {
+			if err := s.Keys.Create(privateKey, email); err != nil {
+				return err
+			}
+		} else {
 			return err
 		}
 	case "existing":
@@ -172,7 +195,7 @@ func (s Service) uploadKey(account config.Account) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return s.GitHub.UploadWithDeviceFlow("gzy-"+account.Alias, publicKey)
+	return s.GitHub.UploadWithDeviceFlow(account.Alias, publicKey)
 }
 
 func (s Service) now() time.Time {

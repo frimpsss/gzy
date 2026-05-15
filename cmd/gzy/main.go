@@ -23,6 +23,10 @@ func main() {
 	if binDir == "" {
 		binDir = p.BinDir()
 	}
+	tokenDir := os.Getenv("GZY_TOKEN_DIR")
+	if tokenDir == "" {
+		tokenDir = p.TokenDir()
+	}
 	clientID := os.Getenv("GZY_GITHUB_CLIENT_ID")
 	if clientID == "" {
 		clientID = defaultGitHubClientID
@@ -37,6 +41,7 @@ func main() {
 			ConfigPath:     configPath,
 			BinDir:         binDir,
 			GZYPath:        exe,
+			TokenDir:       tokenDir,
 			GitHubClientID: clientID,
 		}),
 	}

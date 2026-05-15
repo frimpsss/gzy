@@ -14,10 +14,20 @@ type Command struct {
 
 type Runner struct {
 	GitPath string
+	GZYPath string
 }
 
-func BuildCommand(account config.Account, gitArgs []string) Command {
-	args := []string{"-c", "user.name=" + account.Name, "-c", "user.email=" + account.Email}
+func BuildCommand(account config.Account, gitArgs []string, gzyPath string) Command {
+	args := []string{
+		"-c", "user.name=" + account.Name,
+		"-c", "user.email=" + account.Email,
+	}
+	if gzyPath != "" {
+		args = append(args,
+			"-c", "credential.https://github.com.helper=",
+			"-c", "credential.https://github.com.helper=!"+gzyPath+" credential "+account.Alias,
+		)
+	}
 	args = append(args, gitArgs...)
 	env := map[string]string{
 		"GIT_SSH_COMMAND": "ssh -i " + account.PrivateKey + " -o IdentitiesOnly=yes",
@@ -30,7 +40,7 @@ func (r Runner) Run(account config.Account, gitArgs []string) (int, error) {
 	if gitPath == "" {
 		gitPath = "git"
 	}
-	built := BuildCommand(account, gitArgs)
+	built := BuildCommand(account, gitArgs, r.GZYPath)
 	cmd := exec.Command(gitPath, built.Args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

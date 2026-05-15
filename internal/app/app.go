@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"github.com/frimpsss/gzy/internal/paths"
 	"github.com/frimpsss/gzy/internal/setup"
 	"github.com/frimpsss/gzy/internal/sshkeys"
+	"github.com/frimpsss/gzy/internal/tokens"
 	"github.com/frimpsss/gzy/internal/wrapper"
 )
 
@@ -26,6 +28,7 @@ type Config struct {
 	ConfigPath     string
 	BinDir         string
 	GZYPath        string
+	TokenDir       string
 	GOOS           string
 	GitHubClientID string
 	Stdin          io.Reader
@@ -84,7 +87,17 @@ func (a *App) Remove(alias string) error {
 	if err := config.Save(a.cfg.ConfigPath, cfg); err != nil {
 		return err
 	}
+	a.removeToken(alias)
 	return wrapper.Remove(a.cfg.GOOS, a.cfg.BinDir, alias)
+}
+
+func (a *App) removeToken(alias string) {
+	if a.cfg.TokenDir == "" {
+		return
+	}
+	if err := os.Remove(filepath.Join(a.cfg.TokenDir, alias)); err != nil && !os.IsNotExist(err) {
+		fmt.Fprintf(a.cfg.Stdout, "remove token for %s: %v\n", alias, err)
+	}
 }
 
 func (a *App) Install() error {
@@ -178,6 +191,7 @@ func (a *App) Reset(yes bool, deleteKeys bool, deleteGitHub bool) error {
 		if err := wrapper.Remove(a.cfg.GOOS, a.cfg.BinDir, account.Alias); err != nil {
 			fmt.Fprintf(a.cfg.Stdout, "remove wrapper for %s: %v\n", account.Alias, err)
 		}
+		a.removeToken(account.Alias)
 		if deleteKeys {
 			for _, path := range []string{account.PrivateKey, account.PublicKey} {
 				if path == "" {
@@ -233,6 +247,28 @@ func (a *App) deleteGitHubKeys(accounts []config.Account) error {
 	return nil
 }
 
+func (a *App) Credential(alias string) (string, string, error) {
+	cfg, err := config.Load(a.cfg.ConfigPath)
+	if err != nil {
+		return "", "", err
+	}
+	account, ok := cfg.Find(alias)
+	if !ok {
+		return "", "", fmt.Errorf("alias %q is not configured", alias)
+	}
+	if a.cfg.TokenDir == "" {
+		return account.GitHubUser, "", nil
+	}
+	token, err := tokens.Load(a.cfg.TokenDir, alias)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return account.GitHubUser, "", nil
+		}
+		return "", "", err
+	}
+	return account.GitHubUser, token, nil
+}
+
 func (a *App) RunGit(alias string, args []string) (int, error) {
 	cfg, err := config.Load(a.cfg.ConfigPath)
 	if err != nil {
@@ -242,7 +278,7 @@ func (a *App) RunGit(alias string, args []string) (int, error) {
 	if !ok {
 		return 1, fmt.Errorf("alias %q is not configured", alias)
 	}
-	return gitrun.Runner{}.Run(account, args)
+	return gitrun.Runner{GZYPath: a.cfg.GZYPath}.Run(account, args)
 }
 
 func (a *App) setupService() setup.Service {
@@ -251,7 +287,7 @@ func (a *App) setupService() setup.Service {
 		Store:       fileStore{path: a.cfg.ConfigPath},
 		Keys:        keyAdapter{paths: paths.FromOS(), manager: sshkeys.Manager{}},
 		Wrappers:    wrapperAdapter{goos: a.cfg.GOOS, binDir: a.cfg.BinDir, gzyPath: a.cfg.GZYPath},
-		GitHub:      githubAdapter{clientID: a.cfg.GitHubClientID, out: a.cfg.Stdout},
+		GitHub:      githubAdapter{clientID: a.cfg.GitHubClientID, out: a.cfg.Stdout, tokenDir: a.cfg.TokenDir},
 		Stdout:      a.cfg.Stdout,
 		GitIdentity: defaultGitIdentity,
 	}
@@ -363,10 +399,15 @@ func (w wrapperAdapter) Install(alias string) error {
 type githubAdapter struct {
 	clientID string
 	out      io.Writer
+	tokenDir string
 }
 
-func (g githubAdapter) UploadWithDeviceFlow(title string, publicKey string) (int64, error) {
-	client := githubauth.Client{ClientID: g.clientID, HTTP: http.DefaultClient}
+func (g githubAdapter) UploadWithDeviceFlow(alias string, publicKey string) (int64, error) {
+	client := githubauth.Client{
+		ClientID: g.clientID,
+		HTTP:     http.DefaultClient,
+		Scopes:   []string{"write:public_key", "repo"},
+	}
 	code, err := client.StartDeviceFlow()
 	if err != nil {
 		return 0, err
@@ -379,9 +420,14 @@ func (g githubAdapter) UploadWithDeviceFlow(title string, publicKey string) (int
 	if err != nil {
 		return 0, err
 	}
-	key, err := client.UploadKey(token.AccessToken, title, publicKey)
+	key, err := client.UploadKey(token.AccessToken, "gzy-"+alias, publicKey)
 	if err != nil {
 		return 0, err
+	}
+	if g.tokenDir != "" {
+		if err := tokens.Save(g.tokenDir, alias, token.AccessToken); err != nil {
+			fmt.Fprintf(g.out, "warning: could not save HTTPS token for alias %q: %v\n", alias, err)
+		}
 	}
 	return key.ID, nil
 }

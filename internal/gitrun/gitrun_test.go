@@ -10,14 +10,30 @@ import (
 )
 
 func TestBuildCommandAddsIdentityAndGitArgs(t *testing.T) {
-	account := config.Account{Name: "Akwasi Frimpong", Email: "me@example.com", PrivateKey: "/tmp/key"}
-	cmd := BuildCommand(account, []string{"status"})
-	wantArgs := []string{"-c", "user.name=Akwasi Frimpong", "-c", "user.email=me@example.com", "status"}
+	account := config.Account{Alias: "p", Name: "Akwasi Frimpong", Email: "me@example.com", PrivateKey: "/tmp/key"}
+	cmd := BuildCommand(account, []string{"status"}, "")
+	wantArgs := []string{
+		"-c", "user.name=Akwasi Frimpong",
+		"-c", "user.email=me@example.com",
+		"status",
+	}
 	if strings.Join(cmd.Args, "\x00") != strings.Join(wantArgs, "\x00") {
 		t.Fatalf("Args = %#v, want %#v", cmd.Args, wantArgs)
 	}
 	if !strings.Contains(cmd.Env["GIT_SSH_COMMAND"], "ssh -i /tmp/key -o IdentitiesOnly=yes") {
 		t.Fatalf("GIT_SSH_COMMAND = %q", cmd.Env["GIT_SSH_COMMAND"])
+	}
+}
+
+func TestBuildCommandWithGZYPathAddsCredentialHelper(t *testing.T) {
+	account := config.Account{Alias: "p", Name: "Akwasi", Email: "me@example.com", PrivateKey: "/tmp/key"}
+	cmd := BuildCommand(account, []string{"pull"}, "/usr/local/bin/gzy")
+	joined := strings.Join(cmd.Args, "|")
+	if !strings.Contains(joined, "credential.https://github.com.helper=") {
+		t.Fatalf("expected credential helper reset; args = %#v", cmd.Args)
+	}
+	if !strings.Contains(joined, "credential.https://github.com.helper=!/usr/local/bin/gzy credential p") {
+		t.Fatalf("expected credential helper to invoke gzy credential; args = %#v", cmd.Args)
 	}
 }
 

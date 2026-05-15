@@ -118,6 +118,48 @@ func TestExportWritesJSON(t *testing.T) {
 	}
 }
 
+func TestCredentialEmitsUsernameAndTokenForGithub(t *testing.T) {
+	app := &fakeApp{CredUser: "frimpsss", CredToken: "ghp_secret"}
+	var stdout, stderr bytes.Buffer
+	stdin := strings.NewReader("protocol=https\nhost=github.com\n\n")
+	code := runCredential([]string{"p", "get"}, stdin, &stdout, &stderr, Deps{App: app})
+	if code != 0 {
+		t.Fatalf("code = %d, want 0", code)
+	}
+	want := "username=frimpsss\npassword=ghp_secret\n\n"
+	if stdout.String() != want {
+		t.Fatalf("stdout = %q, want %q", stdout.String(), want)
+	}
+}
+
+func TestCredentialIgnoresNonGithubHosts(t *testing.T) {
+	app := &fakeApp{CredUser: "frimpsss", CredToken: "ghp_secret"}
+	var stdout, stderr bytes.Buffer
+	stdin := strings.NewReader("protocol=https\nhost=gitlab.com\n\n")
+	code := runCredential([]string{"p", "get"}, stdin, &stdout, &stderr, Deps{App: app})
+	if code != 0 {
+		t.Fatalf("code = %d, want 0", code)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+}
+
+func TestCredentialIgnoresStoreAndErase(t *testing.T) {
+	app := &fakeApp{CredUser: "frimpsss", CredToken: "ghp_secret"}
+	for _, action := range []string{"store", "erase"} {
+		var stdout, stderr bytes.Buffer
+		stdin := strings.NewReader("protocol=https\nhost=github.com\n\n")
+		code := runCredential([]string{"p", action}, stdin, &stdout, &stderr, Deps{App: app})
+		if code != 0 {
+			t.Fatalf("action %q: code = %d, want 0", action, code)
+		}
+		if stdout.Len() != 0 {
+			t.Fatalf("action %q: stdout = %q, want empty", action, stdout.String())
+		}
+	}
+}
+
 type fakeApp struct {
 	Accounts    []config.Account
 	ExportData  []byte
@@ -128,6 +170,8 @@ type fakeApp struct {
 	ResetYes    bool
 	ResetKeys   bool
 	ResetGitHub bool
+	CredUser    string
+	CredToken   string
 }
 
 func (a *fakeApp) Init() error                     { return nil }
@@ -150,4 +194,7 @@ func (a *fakeApp) Reset(yes, deleteKeys, deleteGitHub bool) error {
 	a.ResetKeys = deleteKeys
 	a.ResetGitHub = deleteGitHub
 	return nil
+}
+func (a *fakeApp) Credential(alias string) (string, string, error) {
+	return a.CredUser, a.CredToken, nil
 }

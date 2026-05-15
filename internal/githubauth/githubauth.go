@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ type Client struct {
 	BaseURL  string
 	HTTP     *http.Client
 	Sleep    func(time.Duration)
+	Scopes   []string
 }
 
 type DeviceCode struct {
@@ -47,7 +49,11 @@ func (c Client) StartDeviceFlow() (DeviceCode, error) {
 	if c.ClientID == "" {
 		return DeviceCode{}, errors.New("GitHub OAuth client id is not configured")
 	}
-	form := "client_id=" + c.ClientID + "&scope=write:public_key"
+	scopes := c.Scopes
+	if len(scopes) == 0 {
+		scopes = []string{"write:public_key"}
+	}
+	form := "client_id=" + c.ClientID + "&scope=" + strings.Join(scopes, "+")
 	req, err := http.NewRequest(http.MethodPost, c.endpoint("/login/device/code"), strings.NewReader(form))
 	if err != nil {
 		return DeviceCode{}, err
@@ -111,10 +117,46 @@ func (c Client) UploadKey(token string, title string, publicKey string) (KeyResp
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 	var response KeyResponse
-	if err := c.doJSON(req, &response); err != nil {
+	uploadErr := c.doJSON(req, &response)
+	if uploadErr == nil {
+		return response, nil
+	}
+	var apiErr *APIError
+	if errors.As(uploadErr, &apiErr) && apiErr.StatusCode == http.StatusUnprocessableEntity && strings.Contains(strings.ToLower(apiErr.Body), "already in use") {
+		existing, lookupErr := c.findKeyByMaterial(token, publicKey)
+		if lookupErr == nil && existing.ID != 0 {
+			return existing, nil
+		}
+	}
+	return KeyResponse{}, uploadErr
+}
+
+func (c Client) findKeyByMaterial(token string, publicKey string) (KeyResponse, error) {
+	req, err := http.NewRequest(http.MethodGet, c.endpoint("/user/keys"), nil)
+	if err != nil {
 		return KeyResponse{}, err
 	}
-	return response, nil
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	var keys []KeyResponse
+	if err := c.doJSON(req, &keys); err != nil {
+		return KeyResponse{}, err
+	}
+	target := keyMaterial(publicKey)
+	for _, k := range keys {
+		if keyMaterial(k.Key) == target {
+			return k, nil
+		}
+	}
+	return KeyResponse{}, nil
+}
+
+func keyMaterial(line string) string {
+	parts := strings.Fields(line)
+	if len(parts) >= 2 {
+		return parts[0] + " " + parts[1]
+	}
+	return strings.TrimSpace(line)
 }
 
 func (c Client) DeleteKey(token string, keyID int64) error {
@@ -155,6 +197,20 @@ func (c Client) endpoint(path string) string {
 	return strings.TrimRight(base, "/") + path
 }
 
+type APIError struct {
+	Status     string
+	StatusCode int
+	Body       string
+}
+
+func (e *APIError) Error() string {
+	body := strings.TrimSpace(e.Body)
+	if body == "" {
+		return fmt.Sprintf("GitHub request failed with status %s", e.Status)
+	}
+	return fmt.Sprintf("GitHub request failed with status %s: %s", e.Status, body)
+}
+
 func (c Client) doJSON(req *http.Request, into any) error {
 	httpClient := c.HTTP
 	if httpClient == nil {
@@ -166,7 +222,11 @@ func (c Client) doJSON(req *http.Request, into any) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return fmt.Errorf("GitHub request failed with status %s", resp.Status)
+		body, _ := io.ReadAll(resp.Body)
+		return &APIError{Status: resp.Status, StatusCode: resp.StatusCode, Body: string(body)}
+	}
+	if into == nil {
+		return nil
 	}
 	return json.NewDecoder(resp.Body).Decode(into)
 }

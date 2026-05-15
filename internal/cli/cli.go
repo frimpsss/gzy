@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"bufio"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 )
 
@@ -46,6 +48,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer, deps Deps) int {
 		return runReset(args[1:], stderr, deps)
 	case "run":
 		return runGitAlias(args[1:], stderr, deps)
+	case "credential":
+		return runCredential(args[1:], os.Stdin, stdout, stderr, deps)
 	default:
 		fmt.Fprintf(stderr, "unknown command: %s\n\n", args[0])
 		printHelp(stderr)
@@ -178,6 +182,42 @@ func runReset(args []string, stderr io.Writer, deps Deps) int {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
 	}
+	return 0
+}
+
+func runCredential(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer, deps Deps) int {
+	if deps.App == nil {
+		return 0
+	}
+	if len(args) < 2 {
+		fmt.Fprintln(stderr, "usage: gzy credential <alias> <get|store|erase>")
+		return 2
+	}
+	alias := args[0]
+	action := args[1]
+	if action != "get" {
+		return 0
+	}
+	host := ""
+	scanner := bufio.NewScanner(stdin)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			break
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if ok && key == "host" {
+			host = value
+		}
+	}
+	if host != "github.com" {
+		return 0
+	}
+	username, token, err := deps.App.Credential(alias)
+	if err != nil || token == "" {
+		return 0
+	}
+	fmt.Fprintf(stdout, "username=%s\npassword=%s\n\n", username, token)
 	return 0
 }
 

@@ -58,6 +58,16 @@ func TestConfigFileWindowsUsesAppData(t *testing.T) {
 	}
 }
 
+func TestTokenDir(t *testing.T) {
+	paths := New("linux", map[string]string{"HOME": "/home/alex"})
+
+	got := paths.TokenDir()
+	want := "/home/alex/.config/gzy/tokens"
+	if got != want {
+		t.Fatalf("TokenDir() = %q, want %q", got, want)
+	}
+}
+
 func TestDefaultKeyPair(t *testing.T) {
 	paths := New("linux", map[string]string{"HOME": "/home/alex"})
 

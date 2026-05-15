@@ -2,6 +2,8 @@ package setup
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/frimpsss/gzy/internal/config"
@@ -33,6 +35,88 @@ func TestAddAccountCreatesConfigAndWrapper(t *testing.T) {
 	}
 	if !keys.Created {
 		t.Fatalf("key was not created")
+	}
+}
+
+func TestAddReusesExistingKeyWhenChosen(t *testing.T) {
+	dir := t.TempDir()
+	privatePath := filepath.Join(dir, "gzy_p")
+	publicPath := filepath.Join(dir, "gzy_p.pub")
+	if err := os.WriteFile(privatePath, []byte("existing-private"), 0o600); err != nil {
+		t.Fatalf("seed private: %v", err)
+	}
+	if err := os.WriteFile(publicPath, []byte("existing-public"), 0o644); err != nil {
+		t.Fatalf("seed public: %v", err)
+	}
+
+	prompts := NewStaticPrompter(map[string]string{
+		"alias":             "p",
+		"githubUser":        "frimpsss",
+		"name":              "Akwasi",
+		"email":             "me@example.com",
+		"keyChoice":         "create",
+		"existingKeyChoice": "reuse",
+		"authChoice":        "manual",
+	})
+	store := &MemoryStore{Config: config.Config{Version: 1}}
+	keys := &FakeKeys{PrivatePath: privatePath, PublicPath: publicPath, PublicKey: "ssh-ed25519 AAAATEST"}
+	wrappers := &FakeWrappers{}
+	var out bytes.Buffer
+
+	service := Service{Prompts: prompts, Store: store, Keys: keys, Wrappers: wrappers, Stdout: &out}
+	if err := service.Add(); err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+
+	if keys.Created {
+		t.Fatalf("Create should not be called when reusing existing key")
+	}
+	if _, err := os.Stat(privatePath); err != nil {
+		t.Fatalf("private key should still exist: %v", err)
+	}
+	if _, err := os.Stat(publicPath); err != nil {
+		t.Fatalf("public key should still exist: %v", err)
+	}
+}
+
+func TestAddOverwritesExistingKeyWhenChosen(t *testing.T) {
+	dir := t.TempDir()
+	privatePath := filepath.Join(dir, "gzy_p")
+	publicPath := filepath.Join(dir, "gzy_p.pub")
+	if err := os.WriteFile(privatePath, []byte("old-private"), 0o600); err != nil {
+		t.Fatalf("seed private: %v", err)
+	}
+	if err := os.WriteFile(publicPath, []byte("old-public"), 0o644); err != nil {
+		t.Fatalf("seed public: %v", err)
+	}
+
+	prompts := NewStaticPrompter(map[string]string{
+		"alias":             "p",
+		"githubUser":        "frimpsss",
+		"name":              "Akwasi",
+		"email":             "me@example.com",
+		"keyChoice":         "create",
+		"existingKeyChoice": "overwrite",
+		"authChoice":        "manual",
+	})
+	store := &MemoryStore{Config: config.Config{Version: 1}}
+	keys := &FakeKeys{PrivatePath: privatePath, PublicPath: publicPath, PublicKey: "ssh-ed25519 AAAATEST"}
+	wrappers := &FakeWrappers{}
+	var out bytes.Buffer
+
+	service := Service{Prompts: prompts, Store: store, Keys: keys, Wrappers: wrappers, Stdout: &out}
+	if err := service.Add(); err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+
+	if !keys.Created {
+		t.Fatalf("Create should be called when overwriting")
+	}
+	if _, err := os.Stat(privatePath); !os.IsNotExist(err) {
+		t.Fatalf("private key should be removed before re-create, stat err = %v", err)
+	}
+	if _, err := os.Stat(publicPath); !os.IsNotExist(err) {
+		t.Fatalf("public key should be removed before re-create, stat err = %v", err)
 	}
 }
 
@@ -100,6 +184,6 @@ func (w *FakeWrappers) Install(alias string) error {
 
 type FakeGitHub struct{ KeyID int64 }
 
-func (g *FakeGitHub) UploadWithDeviceFlow(title string, publicKey string) (int64, error) {
+func (g *FakeGitHub) UploadWithDeviceFlow(alias string, publicKey string) (int64, error) {
 	return g.KeyID, nil
 }

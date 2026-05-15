@@ -54,6 +54,15 @@ func (p Paths) SSHDir() string {
 	return p.join(p.home(), ".ssh")
 }
 
+func (p Paths) TokenDir() string {
+	configFile := p.ConfigFile()
+	dir := configFile[:len(configFile)-len("/config.json")]
+	if p.goos == "windows" {
+		dir = configFile[:len(configFile)-len(`\config.json`)]
+	}
+	return p.join(dir, "tokens")
+}
+
 func (p Paths) DefaultKeyPair(alias string) (string, string) {
 	privateKey := p.join(p.SSHDir(), "gzy_"+alias)
 	return privateKey, privateKey + ".pub"

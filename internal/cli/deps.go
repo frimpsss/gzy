@@ -14,4 +14,5 @@ type App interface {
 	Doctor() ([]string, error)
 	RunGit(alias string, args []string) (int, error)
 	Reset(yes bool, deleteKeys bool, deleteGitHub bool) error
+	Credential(alias string) (username string, token string, err error)
 }
