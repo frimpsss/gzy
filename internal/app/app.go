@@ -141,6 +141,98 @@ func (a *App) Doctor() ([]string, error) {
 	return lines, nil
 }
 
+func (a *App) Reset(yes bool, deleteKeys bool, deleteGitHub bool) error {
+	cfg, err := config.Load(a.cfg.ConfigPath)
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintf(a.cfg.Stdout, "This will delete %d account(s) and their git-* wrappers", len(cfg.Accounts))
+	if deleteKeys {
+		fmt.Fprint(a.cfg.Stdout, ", plus the SSH key files on disk")
+	}
+	if deleteGitHub {
+		fmt.Fprint(a.cfg.Stdout, ", plus the public keys on GitHub")
+	}
+	fmt.Fprintln(a.cfg.Stdout, ".")
+
+	if !yes {
+		prompter := newTerminalPrompter(a.cfg.Stdin, a.cfg.Stdout)
+		got, err := prompter.AskRequired("confirm", "Type 'reset' to confirm")
+		if err != nil {
+			return err
+		}
+		if got != "reset" {
+			fmt.Fprintln(a.cfg.Stdout, "aborted")
+			return nil
+		}
+	}
+
+	if deleteGitHub {
+		if err := a.deleteGitHubKeys(cfg.Accounts); err != nil {
+			fmt.Fprintf(a.cfg.Stdout, "github cleanup: %v (continuing)\n", err)
+		}
+	}
+
+	for _, account := range cfg.Accounts {
+		if err := wrapper.Remove(a.cfg.GOOS, a.cfg.BinDir, account.Alias); err != nil {
+			fmt.Fprintf(a.cfg.Stdout, "remove wrapper for %s: %v\n", account.Alias, err)
+		}
+		if deleteKeys {
+			for _, path := range []string{account.PrivateKey, account.PublicKey} {
+				if path == "" {
+					continue
+				}
+				if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+					fmt.Fprintf(a.cfg.Stdout, "remove %s: %v\n", path, err)
+				}
+			}
+		}
+	}
+
+	empty := config.Config{Version: 1}
+	if err := config.Save(a.cfg.ConfigPath, empty); err != nil {
+		return err
+	}
+	fmt.Fprintln(a.cfg.Stdout, "done")
+	return nil
+}
+
+func (a *App) deleteGitHubKeys(accounts []config.Account) error {
+	hasKeyToDelete := false
+	for _, account := range accounts {
+		if account.GitHubKeyID != 0 {
+			hasKeyToDelete = true
+			break
+		}
+	}
+	if !hasKeyToDelete {
+		return nil
+	}
+	client := githubauth.Client{ClientID: a.cfg.GitHubClientID, HTTP: http.DefaultClient}
+	code, err := client.StartDeviceFlow()
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(a.cfg.Stdout, "\nVisit %s and enter code: %s\n", code.VerificationURI, code.UserCode)
+	if err := openBrowser(code.VerificationURI); err == nil {
+		fmt.Fprintln(a.cfg.Stdout, "(opened your browser; set GZY_NO_BROWSER=1 to skip)")
+	}
+	token, err := client.WaitForToken(code, time.Now().Add(time.Duration(code.ExpiresIn)*time.Second))
+	if err != nil {
+		return err
+	}
+	for _, account := range accounts {
+		if account.GitHubKeyID == 0 {
+			continue
+		}
+		if err := client.DeleteKey(token.AccessToken, account.GitHubKeyID); err != nil {
+			fmt.Fprintf(a.cfg.Stdout, "delete github key %d (%s): %v\n", account.GitHubKeyID, account.Alias, err)
+		}
+	}
+	return nil
+}
+
 func (a *App) RunGit(alias string, args []string) (int, error) {
 	cfg, err := config.Load(a.cfg.ConfigPath)
 	if err != nil {

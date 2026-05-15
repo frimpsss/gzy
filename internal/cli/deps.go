@@ -13,4 +13,5 @@ type App interface {
 	Auth(alias string) error
 	Doctor() ([]string, error)
 	RunGit(alias string, args []string) (int, error)
+	Reset(yes bool, deleteKeys bool, deleteGitHub bool) error
 }

@@ -87,6 +87,26 @@ func TestRemoveRequiresAlias(t *testing.T) {
 	}
 }
 
+func TestResetParsesFlags(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	app := &fakeApp{}
+	code := Run([]string{"reset", "--yes", "--keys", "--github"}, &stdout, &stderr, Deps{App: app})
+	if code != 0 {
+		t.Fatalf("Run() code=%d stderr=%q", code, stderr.String())
+	}
+	if !app.ResetCalled || !app.ResetYes || !app.ResetKeys || !app.ResetGitHub {
+		t.Fatalf("reset state = %+v", app)
+	}
+}
+
+func TestResetRejectsUnknownFlag(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"reset", "--nope"}, &stdout, &stderr, Deps{App: &fakeApp{}})
+	if code != 2 {
+		t.Fatalf("Run() code=%d, want 2; stderr=%q", code, stderr.String())
+	}
+}
+
 func TestExportWritesJSON(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"export"}, &stdout, &stderr, Deps{App: &fakeApp{ExportData: []byte(`{"version":1}`)}})
@@ -99,11 +119,15 @@ func TestExportWritesJSON(t *testing.T) {
 }
 
 type fakeApp struct {
-	Accounts   []config.Account
-	ExportData []byte
-	RunCode    int
-	RunAlias   string
-	RunArgs    []string
+	Accounts    []config.Account
+	ExportData  []byte
+	RunCode     int
+	RunAlias    string
+	RunArgs     []string
+	ResetCalled bool
+	ResetYes    bool
+	ResetKeys   bool
+	ResetGitHub bool
 }
 
 func (a *fakeApp) Init() error                     { return nil }
@@ -119,4 +143,11 @@ func (a *fakeApp) RunGit(alias string, args []string) (int, error) {
 	a.RunAlias = alias
 	a.RunArgs = append([]string{}, args...)
 	return a.RunCode, nil
+}
+func (a *fakeApp) Reset(yes, deleteKeys, deleteGitHub bool) error {
+	a.ResetCalled = true
+	a.ResetYes = yes
+	a.ResetKeys = deleteKeys
+	a.ResetGitHub = deleteGitHub
+	return nil
 }

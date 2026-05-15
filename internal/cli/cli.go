@@ -42,6 +42,8 @@ func Run(args []string, stdout io.Writer, stderr io.Writer, deps Deps) int {
 		return runOneArg(args[1:], stderr, deps, "auth")
 	case "doctor":
 		return runDoctor(stdout, stderr, deps)
+	case "reset":
+		return runReset(args[1:], stderr, deps)
 	case "run":
 		return runGitAlias(args[1:], stderr, deps)
 	default:
@@ -153,6 +155,32 @@ func runExport(stdout io.Writer, stderr io.Writer, deps Deps) int {
 	return 0
 }
 
+func runReset(args []string, stderr io.Writer, deps Deps) int {
+	if deps.App == nil {
+		fmt.Fprintln(stderr, "application is not configured")
+		return 1
+	}
+	var yes, deleteKeys, deleteGitHub bool
+	for _, a := range args {
+		switch a {
+		case "--yes", "-y":
+			yes = true
+		case "--keys":
+			deleteKeys = true
+		case "--github":
+			deleteGitHub = true
+		default:
+			fmt.Fprintf(stderr, "unknown flag: %s\nusage: gzy reset [--yes] [--keys] [--github]\n", a)
+			return 2
+		}
+	}
+	if err := deps.App.Reset(yes, deleteKeys, deleteGitHub); err != nil {
+		fmt.Fprintf(stderr, "%v\n", err)
+		return 1
+	}
+	return 0
+}
+
 func runDoctor(stdout io.Writer, stderr io.Writer, deps Deps) int {
 	if deps.App == nil {
 		fmt.Fprintln(stderr, "application is not configured")
@@ -182,6 +210,7 @@ Usage:
   gzy import <file>
   gzy auth <alias>
   gzy doctor
+  gzy reset [--yes] [--keys] [--github]
   gzy run <alias> -- <git args...>
   gzy version`)+"\n")
 }

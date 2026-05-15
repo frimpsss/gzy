@@ -81,3 +81,33 @@ func TestWaitForTokenDenied(t *testing.T) {
 		t.Fatal("WaitForToken denied returned nil")
 	}
 }
+
+func TestDeleteKeySuccessAndIdempotent(t *testing.T) {
+	var calls []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.Method+" "+r.URL.Path)
+		if r.Header.Get("Authorization") != "Bearer token" {
+			t.Fatalf("Authorization = %q", r.Header.Get("Authorization"))
+		}
+		switch r.URL.Path {
+		case "/user/keys/42":
+			w.WriteHeader(http.StatusNoContent)
+		case "/user/keys/99":
+			w.WriteHeader(http.StatusNotFound)
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := Client{BaseURL: server.URL, HTTP: server.Client()}
+	if err := client.DeleteKey("token", 42); err != nil {
+		t.Fatalf("DeleteKey(42) error = %v", err)
+	}
+	if err := client.DeleteKey("token", 99); err != nil {
+		t.Fatalf("DeleteKey(99) on missing key should be nil, got %v", err)
+	}
+	if len(calls) != 2 || calls[0] != "DELETE /user/keys/42" || calls[1] != "DELETE /user/keys/99" {
+		t.Fatalf("calls = %v", calls)
+	}
+}

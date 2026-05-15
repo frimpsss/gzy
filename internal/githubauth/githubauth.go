@@ -117,13 +117,40 @@ func (c Client) UploadKey(token string, title string, publicKey string) (KeyResp
 	return response, nil
 }
 
+func (c Client) DeleteKey(token string, keyID int64) error {
+	url := c.endpoint(fmt.Sprintf("/user/keys/%d", keyID))
+	req, err := http.NewRequest(http.MethodDelete, url, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	httpClient := c.HTTP
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil
+	}
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return fmt.Errorf("GitHub key delete failed with status %s", resp.Status)
+	}
+	return nil
+}
+
 func (c Client) endpoint(path string) string {
 	base := c.BaseURL
 	if base == "" {
 		base = "https://github.com"
 	}
-	if path == "/user/keys" && c.BaseURL == "" {
-		return "https://api.github.com/user/keys"
+	if c.BaseURL == "" && strings.HasPrefix(path, "/user/keys") {
+		return "https://api.github.com" + path
 	}
 	return strings.TrimRight(base, "/") + path
 }
