@@ -1,157 +1,239 @@
 # gzy
 
-`gzy` lets you use multiple GitHub accounts on one computer through simple Git aliases like `git-p` and `git-w`.
+`gzy` lets you use multiple GitHub accounts on one computer through simple Git aliases like `git-p` (personal) and `git-w` (work). Each alias uses its own SSH key, commit name, and email — no more `git config` juggling.
 
-## Install
+This README walks you through building `gzy` **from source** and using it on your own machine. No prior Go experience required.
 
-macOS and Linux:
+---
+
+## 1. Prerequisites
+
+You need three things installed:
+
+| Tool   | Check with         | Get it from                                     |
+| ------ | ------------------ | ----------------------------------------------- |
+| Go 1.22+ | `go version`     | https://go.dev/dl/                              |
+| Git    | `git --version`    | https://git-scm.com/downloads                   |
+| ssh-keygen | `ssh-keygen -V` | Already on macOS / Linux. Windows: install Git Bash or OpenSSH. |
+
+If `go version` prints something like `go version go1.22.x` or higher, you're good.
+
+---
+
+## 2. Get the code
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/frimpsss/gzy/main/install.sh | sh
+git clone https://github.com/frimpsss/gzy.git
+cd gzy
 ```
+
+---
+
+## 3. Create a GitHub OAuth App (one-time, ~2 minutes)
+
+`gzy init` opens your browser to sign in to GitHub and upload an SSH key for you. To do that, it needs a free **OAuth App Client ID**. This is a public ID — not a secret.
+
+1. Go to https://github.com/settings/developers → **New OAuth App**.
+2. Fill in:
+   - **Application name:** `gzy-local` (anything is fine)
+   - **Homepage URL:** `http://localhost`
+   - **Authorization callback URL:** `http://localhost`
+3. Click **Register application**.
+4. On the next page, click **Enable Device Flow** and **Update application**.
+5. Copy the **Client ID** (looks like `Iv1.abc123...` or `Ov23li...`).
+
+Now wire it into your local build:
 
 ```sh
-wget -qO- https://raw.githubusercontent.com/frimpsss/gzy/main/install.sh | sh
+cp .env.example .env.local
 ```
 
-Windows PowerShell:
+Open `.env.local` and replace the placeholder:
 
-```powershell
-irm https://raw.githubusercontent.com/frimpsss/gzy/main/install.ps1 | iex
+```
+GZY_GITHUB_CLIENT_ID=Iv1.your-client-id-here
 ```
 
-## First Setup
+> `.env.local` is gitignored, so this stays on your machine.
+
+---
+
+## 4. Build the binary
+
+One command builds `gzy` and drops it in `~/.local/bin`:
+
+```sh
+./scripts/install-local.sh
+```
+
+You should see:
+
+```
+embedding GZY_GITHUB_CLIENT_ID from .env.local
+built /Users/you/.local/bin/gzy
+installed: /Users/you/.local/bin/gzy
+```
+
+Verify it works:
+
+```sh
+gzy version
+```
+
+> **"command not found: gzy"?** Your shell can't find `~/.local/bin`. Add it to your `PATH`:
+>
+> ```sh
+> echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+> source ~/.zshrc
+> ```
+>
+> (Use `~/.bashrc` instead if you're on bash.)
+
+**Alternative: build without installing**
+
+```sh
+./scripts/build.sh           # produces ./dist/gzy
+./dist/gzy version
+```
+
+---
+
+## 5. Set up your first account
 
 ```sh
 gzy init
 ```
 
-`gzy` asks for an alias, GitHub username, commit name, commit email, and SSH key choice. Browser authentication is the default path. It uploads the public SSH key to GitHub after you approve the app in your browser.
+`gzy` will ask you for:
 
-## Daily Use
+- **Alias** — short tag like `p` (personal) or `w` (work). This becomes the command `git-p` / `git-w`.
+- **GitHub username** — your `github.com/<username>`.
+- **Commit name** — what shows up as the author on commits.
+- **Commit email** — use the `@users.noreply.github.com` email from https://github.com/settings/emails if you want to keep your real email private.
+- **SSH key** — let `gzy` generate a fresh one (recommended) or point at an existing key.
+
+When prompted, `gzy` opens your browser to authorize the OAuth app. After you approve it, `gzy`:
+
+1. Uploads your new SSH public key to that GitHub account.
+2. Writes a `git-<alias>` wrapper into `~/.local/bin` (or `~/bin` on macOS by default).
+3. Saves your config to the platform config directory.
+
+Repeat `gzy init` for each extra account (e.g. once with alias `p`, again with alias `w`).
+
+---
+
+## 6. Use it
+
+Use the `git-<alias>` wrappers exactly like `git`:
 
 ```sh
-git-p clone git@github.com:frimpsss/example.git
+git-p clone git@github.com:you/personal-repo.git
+cd personal-repo
 git-p status
+git-p commit -m "first commit"
 git-p push
-git-w commit -m "message"
+
+# In a different repo:
+git-w clone git@github.com:your-company/work-repo.git
+cd work-repo
+git-w pull
 ```
 
-## HTTPS Remotes
+Each wrapper transparently uses the right SSH key, name, and email for that account. Your normal `git` command still works the same way it did before.
 
-`gzy` sets the commit name and email for both SSH and HTTPS remotes. GitHub login for HTTPS remotes still depends on your system Git credential manager. SSH remotes provide the smoothest multi-account flow.
+---
 
-## Transfer To Another Machine
-
-```sh
-gzy export > gzy-config.json
-gzy import gzy-config.json
-gzy install
-gzy doctor
-```
-
-Private SSH keys are not exported.
-
-## Development
+## 7. Useful commands
 
 ```sh
-go test ./...
-go build ./cmd/gzy
-```
-
-## Run Locally From Source
-
-Run any command without installing:
-
-```sh
-go run ./cmd/gzy version
-go run ./cmd/gzy init
-go run ./cmd/gzy list
-```
-
-### Install locally with one script
-
-```sh
-cp .env.example .env.local        # paste your GitHub OAuth Client ID
-./scripts/install-local.sh        # builds + drops gzy into ~/.local/bin
+gzy list                # show configured accounts
+gzy doctor              # check that SSH keys, wrappers, and PATH look right
+gzy install             # regenerate wrappers (e.g. after editing config)
+gzy reset               # wipe gzy config, wrappers, and generated keys
+gzy export > my.json    # export config (without private keys)
+gzy import my.json      # import config on a new machine
 gzy version
 ```
 
-`install-local.sh` reads `.env.local` and bakes `GZY_GITHUB_CLIENT_ID` into the binary via `-ldflags`, so end-users (and you) don't need to set the env var to use the browser auth flow.
+---
 
-Override the install location:
+## Where things live
+
+| What                        | Path                                             |
+| --------------------------- | ------------------------------------------------ |
+| Built binary                | `~/.local/bin/gzy`                               |
+| Generated wrappers          | `~/.local/bin/git-<alias>` (Linux) or `~/bin/git-<alias>` (macOS) |
+| Config file                 | Run `gzy doctor` to see the platform path        |
+| SSH keys (when gzy generates them) | `~/.ssh/gzy_<alias>` and `~/.ssh/gzy_<alias>.pub` |
+
+---
+
+## Troubleshooting
+
+**`git-p: command not found`** — The wrappers directory isn't on your `PATH`. Run `gzy doctor`; it will print the exact directory. Add it to `PATH` as in step 4.
+
+**Browser auth fails / `GZY_GITHUB_CLIENT_ID is not set`** — You skipped step 3, or built before creating `.env.local`. Re-run `./scripts/install-local.sh`. You can also set it at runtime: `GZY_GITHUB_CLIENT_ID=Iv1.xxx gzy init`.
+
+**Want to skip the browser?** — Set `GZY_NO_BROWSER=1`. `gzy` will print the device-flow code for you to enter manually.
+
+**Pushing to the wrong account?** — You're probably using plain `git push`. Use `git-<alias> push` so the right SSH key is selected.
+
+**Want to start over?** — `gzy reset` wipes config, wrappers, and gzy-generated keys.
+
+---
+
+## Trying it without touching your real setup
+
+Want to experiment with `gzy` against a throwaway config? Point it at a temp directory:
 
 ```sh
-PREFIX=/usr/local ./scripts/install-local.sh
-```
-
-Or just build without installing:
-
-```sh
-./scripts/build.sh                # writes ./dist/gzy
-OUT=/tmp/gzy ./scripts/build.sh   # custom path
-```
-
-After `gzy init` (or `gzy install` when you already have a config), the generated `git-<alias>` wrappers land in your platform bin directory (`~/.local/bin` on Linux, `~/bin` on macOS/Windows by default). Make sure that directory is on your `PATH`:
-
-```sh
-export PATH="$HOME/.local/bin:$PATH"   # add to ~/.zshrc or ~/.bashrc
-git-p status                            # invokes the freshly generated wrapper
-```
-
-## Test Locally
-
-Build the binary and exercise it against a temporary config without touching your real one:
-
-```sh
-# Build into ./dist
-go build -o ./dist/gzy ./cmd/gzy
-./dist/gzy version
-
-# Create a throwaway config
 tmp="$(mktemp -d)"
-cat > "$tmp/config.json" <<EOF
-{
-  "version": 1,
-  "accounts": [{
-    "alias": "p",
-    "command": "git-p",
-    "github_user": "frimpsss",
-    "name": "Akwasi Frimpong",
-    "email": "you@example.com",
-    "private_key": "$HOME/.ssh/id_ed25519",
-    "public_key": "$HOME/.ssh/id_ed25519.pub",
-    "created_at": "2026-05-15T00:00:00Z"
-  }]
-}
-EOF
-
-# Point gzy at the temp config + bin dir
 export GZY_CONFIG="$tmp/config.json"
 export GZY_BIN_DIR="$tmp/bin"
 
+./dist/gzy init     # writes only into $tmp, leaves your real config alone
 ./dist/gzy list
-./dist/gzy doctor
-./dist/gzy install        # writes git-p into $GZY_BIN_DIR
-"$tmp/bin/git-p" status   # delegates through gzy run p -- status
 ```
 
-Environment variables for local runs:
+When you're done, `unset GZY_CONFIG GZY_BIN_DIR` and `gzy` is back to its real config.
 
-- `GZY_CONFIG` — path to the config JSON (defaults to the platform config location).
-- `GZY_BIN_DIR` — directory where `git-<alias>` wrappers are written (defaults to the platform bin location).
-- `GZY_GITHUB_CLIENT_ID` — OAuth client ID used by `gzy init` / `gzy auth` browser flow. Overrides the value baked in at build time from `.env.local`.
-- `GZY_NO_BROWSER` — when set (any value), skip auto-opening the browser for the device flow.
+---
 
-Run a single package's tests with verbose output:
+## Environment variables (advanced)
+
+| Variable                | Purpose                                                                                          |
+| ----------------------- | ------------------------------------------------------------------------------------------------ |
+| `GZY_CONFIG`            | Override the config file path.                                                                   |
+| `GZY_BIN_DIR`           | Override where `git-<alias>` wrappers are written.                                               |
+| `GZY_GITHUB_CLIENT_ID`  | OAuth Client ID for the browser flow. Overrides whatever was baked in from `.env.local`.         |
+| `GZY_NO_BROWSER`        | Set to any value to skip auto-opening the browser during device-flow auth.                       |
+
+---
+
+## Developer reference
+
+Run the test suite:
+
+```sh
+go test ./...
+```
+
+Run a single package:
 
 ```sh
 go test ./internal/wrapper -v
-go test ./internal/cli -run TestListPrintsAccounts -v
 ```
 
-Cross-compile a release-style binary:
+Run `gzy` straight from source without building:
 
 ```sh
-GOOS=linux GOARCH=amd64 go build -o ./dist/gzy-linux-amd64 ./cmd/gzy
+go run ./cmd/gzy version
+go run ./cmd/gzy list
+```
+
+Cross-compile:
+
+```sh
+GOOS=linux  GOARCH=amd64 go build -o ./dist/gzy-linux-amd64  ./cmd/gzy
+GOOS=darwin GOARCH=arm64 go build -o ./dist/gzy-darwin-arm64 ./cmd/gzy
 ```
