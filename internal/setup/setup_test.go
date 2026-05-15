@@ -84,9 +84,9 @@ type FakeKeys struct {
 	Created     bool
 }
 
-func (k *FakeKeys) DefaultKeyPair(alias string) (string, string)   { return k.PrivatePath, k.PublicPath }
-func (k *FakeKeys) Create(privatePath string, email string) error  { k.Created = true; return nil }
-func (k *FakeKeys) ReadPublic(publicPath string) (string, error)   { return k.PublicKey, nil }
+func (k *FakeKeys) DefaultKeyPair(alias string) (string, string)  { return k.PrivatePath, k.PublicPath }
+func (k *FakeKeys) Create(privatePath string, email string) error { k.Created = true; return nil }
+func (k *FakeKeys) ReadPublic(publicPath string) (string, error)  { return k.PublicKey, nil }
 
 type FakeWrappers struct{ Installed map[string]bool }
 

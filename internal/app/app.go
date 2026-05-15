@@ -247,9 +247,15 @@ type keyAdapter struct {
 	manager sshkeys.Manager
 }
 
-func (k keyAdapter) DefaultKeyPair(alias string) (string, string)  { return k.paths.DefaultKeyPair(alias) }
-func (k keyAdapter) Create(privatePath string, email string) error { return k.manager.Create(privatePath, email) }
-func (k keyAdapter) ReadPublic(publicPath string) (string, error)  { return sshkeys.ReadPublicKey(publicPath) }
+func (k keyAdapter) DefaultKeyPair(alias string) (string, string) {
+	return k.paths.DefaultKeyPair(alias)
+}
+func (k keyAdapter) Create(privatePath string, email string) error {
+	return k.manager.Create(privatePath, email)
+}
+func (k keyAdapter) ReadPublic(publicPath string) (string, error) {
+	return sshkeys.ReadPublicKey(publicPath)
+}
 
 type wrapperAdapter struct {
 	goos    string
@@ -273,7 +279,10 @@ func (g githubAdapter) UploadWithDeviceFlow(title string, publicKey string) (int
 	if err != nil {
 		return 0, err
 	}
-	fmt.Fprintf(g.out, "Open %s and enter code %s\n", code.VerificationURI, code.UserCode)
+	fmt.Fprintf(g.out, "\nVisit %s and enter code: %s\n", code.VerificationURI, code.UserCode)
+	if err := openBrowser(code.VerificationURI); err == nil {
+		fmt.Fprintln(g.out, "(opened your browser; set GZY_NO_BROWSER=1 to skip)")
+	}
 	token, err := client.WaitForToken(code, time.Now().Add(time.Duration(code.ExpiresIn)*time.Second))
 	if err != nil {
 		return 0, err
@@ -283,4 +292,28 @@ func (g githubAdapter) UploadWithDeviceFlow(title string, publicKey string) (int
 		return 0, err
 	}
 	return key.ID, nil
+}
+
+func openBrowser(url string) error {
+	if os.Getenv("GZY_NO_BROWSER") != "" {
+		return fmt.Errorf("browser open disabled by GZY_NO_BROWSER")
+	}
+	bin, args := browserCommand(runtime.GOOS, url)
+	if bin == "" {
+		return fmt.Errorf("no browser opener for %s", runtime.GOOS)
+	}
+	return exec.Command(bin, args...).Start()
+}
+
+func browserCommand(goos string, url string) (string, []string) {
+	switch goos {
+	case "darwin":
+		return "open", []string{url}
+	case "windows":
+		return "cmd", []string{"/c", "start", "", url}
+	case "linux":
+		return "xdg-open", []string{url}
+	default:
+		return "", nil
+	}
 }

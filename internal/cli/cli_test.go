@@ -106,15 +106,15 @@ type fakeApp struct {
 	RunArgs    []string
 }
 
-func (a *fakeApp) Init() error                       { return nil }
-func (a *fakeApp) Add() error                        { return nil }
-func (a *fakeApp) List() ([]config.Account, error)   { return a.Accounts, nil }
-func (a *fakeApp) Remove(alias string) error         { return nil }
-func (a *fakeApp) Install() error                    { return nil }
-func (a *fakeApp) Export() ([]byte, error)           { return a.ExportData, nil }
-func (a *fakeApp) Import(path string) error          { return nil }
-func (a *fakeApp) Auth(alias string) error           { return nil }
-func (a *fakeApp) Doctor() ([]string, error)         { return []string{"OK   git"}, nil }
+func (a *fakeApp) Init() error                     { return nil }
+func (a *fakeApp) Add() error                      { return nil }
+func (a *fakeApp) List() ([]config.Account, error) { return a.Accounts, nil }
+func (a *fakeApp) Remove(alias string) error       { return nil }
+func (a *fakeApp) Install() error                  { return nil }
+func (a *fakeApp) Export() ([]byte, error)         { return a.ExportData, nil }
+func (a *fakeApp) Import(path string) error        { return nil }
+func (a *fakeApp) Auth(alias string) error         { return nil }
+func (a *fakeApp) Doctor() ([]string, error)       { return []string{"OK   git"}, nil }
 func (a *fakeApp) RunGit(alias string, args []string) (int, error) {
 	a.RunAlias = alias
 	a.RunArgs = append([]string{}, args...)

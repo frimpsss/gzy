@@ -101,6 +101,37 @@ func TestTerminalPrompterAskRequiredRetriesOnEmptyInput(t *testing.T) {
 	}
 }
 
+func TestBrowserCommandPerOS(t *testing.T) {
+	cases := []struct {
+		goos    string
+		wantBin string
+	}{
+		{"darwin", "open"},
+		{"linux", "xdg-open"},
+		{"windows", "cmd"},
+	}
+	for _, tc := range cases {
+		bin, args := browserCommand(tc.goos, "https://example.com")
+		if bin != tc.wantBin {
+			t.Fatalf("goos=%q bin=%q want %q", tc.goos, bin, tc.wantBin)
+		}
+		joined := strings.Join(args, " ")
+		if !strings.Contains(joined, "https://example.com") {
+			t.Fatalf("goos=%q args=%v missing url", tc.goos, args)
+		}
+	}
+	if bin, _ := browserCommand("plan9", "https://example.com"); bin != "" {
+		t.Fatalf("unsupported OS should return empty bin, got %q", bin)
+	}
+}
+
+func TestOpenBrowserHonorsGZYNoBrowser(t *testing.T) {
+	t.Setenv("GZY_NO_BROWSER", "1")
+	if err := openBrowser("https://example.com"); err == nil {
+		t.Fatal("expected error when GZY_NO_BROWSER set")
+	}
+}
+
 func TestTerminalPrompterAskChoiceRetriesOnInvalidInputAndPrintsMenu(t *testing.T) {
 	var out bytes.Buffer
 	p := newTerminalPrompter(strings.NewReader("99\nabc\n2\n"), &out)
