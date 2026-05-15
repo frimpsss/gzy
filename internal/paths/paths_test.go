@@ -22,6 +22,16 @@ func TestConfigFileLinux(t *testing.T) {
 	}
 }
 
+func TestConfigFileLinuxPreservesRootHome(t *testing.T) {
+	paths := New("linux", map[string]string{"HOME": "/"})
+
+	got := paths.ConfigFile()
+	want := "/.config/gzy/config.json"
+	if got != want {
+		t.Fatalf("ConfigFile() = %q, want %q", got, want)
+	}
+}
+
 func TestConfigFileLinuxRespectsXDGConfigHome(t *testing.T) {
 	paths := New("linux", map[string]string{
 		"HOME":            "/home/alex",
@@ -64,6 +74,19 @@ func TestBinDirLinuxPrefersLocalBinWhenInPath(t *testing.T) {
 	paths := New("linux", map[string]string{
 		"HOME": "/home/alex",
 		"PATH": "/usr/bin:/home/alex/.local/bin:/bin",
+	})
+
+	got := paths.BinDir()
+	want := "/home/alex/.local/bin"
+	if got != want {
+		t.Fatalf("BinDir() = %q, want %q", got, want)
+	}
+}
+
+func TestBinDirLinuxNormalizesPathEntries(t *testing.T) {
+	paths := New("linux", map[string]string{
+		"HOME": "/home/alex",
+		"PATH": "/usr/bin:/home/alex//.local/bin/:/bin",
 	})
 
 	got := paths.BinDir()

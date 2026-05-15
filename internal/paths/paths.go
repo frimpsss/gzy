@@ -2,6 +2,7 @@ package paths
 
 import (
 	"os"
+	"path"
 	"runtime"
 	"strings"
 )
@@ -78,8 +79,9 @@ func (p Paths) home() string {
 }
 
 func (p Paths) pathContains(dir string) bool {
+	normalizedDir := p.normalizePath(dir)
 	for _, part := range strings.Split(p.env["PATH"], p.pathListSeparator()) {
-		if part == dir {
+		if p.normalizePath(part) == normalizedDir {
 			return true
 		}
 	}
@@ -95,9 +97,17 @@ func (p Paths) join(parts ...string) string {
 		}
 		if joined == "" {
 			joined = strings.TrimRight(part, separator)
+			if joined == "" && part == separator {
+				joined = separator
+			}
 			continue
 		}
-		joined += separator + strings.Trim(part, separator)
+		part = strings.Trim(part, separator)
+		if joined == separator {
+			joined += part
+			continue
+		}
+		joined += separator + part
 	}
 	return joined
 }
@@ -114,4 +124,11 @@ func (p Paths) pathListSeparator() string {
 		return ";"
 	}
 	return ":"
+}
+
+func (p Paths) normalizePath(value string) string {
+	if p.goos == "windows" {
+		return value
+	}
+	return path.Clean(value)
 }
