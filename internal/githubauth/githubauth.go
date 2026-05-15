@@ -124,9 +124,13 @@ func (c Client) UploadKey(token string, title string, publicKey string) (KeyResp
 	var apiErr *APIError
 	if errors.As(uploadErr, &apiErr) && apiErr.StatusCode == http.StatusUnprocessableEntity && strings.Contains(strings.ToLower(apiErr.Body), "already in use") {
 		existing, lookupErr := c.findKeyByMaterial(token, publicKey)
-		if lookupErr == nil && existing.ID != 0 {
+		if lookupErr != nil {
+			return KeyResponse{}, fmt.Errorf("GitHub reports the key is already in use, but listing your account keys failed: %w", lookupErr)
+		}
+		if existing.ID != 0 {
 			return existing, nil
 		}
+		return KeyResponse{}, fmt.Errorf("GitHub reports the key is already in use but it is not on this account — it may be registered to a different GitHub user. Generate a new key (delete %s and re-run) or remove the duplicate from the other account", keyMaterial(publicKey))
 	}
 	return KeyResponse{}, uploadErr
 }
