@@ -35,6 +35,40 @@ git-w push
 git-p commit -m "message"
 ```
 
+## Installation
+
+`gzy` should be installable without requiring users to clone the repository or install Go.
+
+The project ships prebuilt release binaries for macOS, Linux, and Windows. It also ships installer scripts at the repository root:
+
+- `install.sh` for macOS and Linux
+- `install.ps1` for Windows PowerShell
+
+The public README should support these install commands once the GitHub repository is published at `frimpsss/gzy`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/frimpsss/gzy/main/install.sh | sh
+```
+
+```sh
+wget -qO- https://raw.githubusercontent.com/frimpsss/gzy/main/install.sh | sh
+```
+
+For Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/frimpsss/gzy/main/install.ps1 | iex
+```
+
+Windows users who prefer `curl.exe` can download and run the PowerShell installer:
+
+```powershell
+curl.exe -fsSL https://raw.githubusercontent.com/frimpsss/gzy/main/install.ps1 -o install.ps1
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+The installers detect OS and CPU architecture, download the matching release binary, install it into a user-writable bin directory, and print exact `PATH` instructions when the chosen directory is not already available in the shell.
+
 ## CLI Commands
 
 `gzy init` starts a guided first-run setup and creates the first account alias.
@@ -191,11 +225,12 @@ Core logic should be unit-tested without running real GitHub authentication:
 - Wrapper file generation
 - Git command construction
 - SSH key discovery parsing
+- Installer OS and architecture selection
 
 Integration tests can use temporary directories and fake `git` or `ssh` binaries on `PATH` to verify environment variables and subprocess arguments without touching the user's real Git configuration.
 
 ## Initial Scope
 
-The first implementation includes the Go CLI, config management, guided account setup, SSH key creation or selection, wrapper generation, export/import, and doctor checks.
+The first implementation includes the Go CLI, config management, guided account setup, SSH key creation or selection, wrapper generation, export/import, doctor checks, release build scripts, and curl/wget/PowerShell installers.
 
 The first implementation does not need GitHub API integration, automatic browser login, private key export, or advanced credential-manager manipulation.
