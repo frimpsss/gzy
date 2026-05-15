@@ -59,6 +59,38 @@ go test ./...
 go build ./cmd/gzy
 ```
 
+## Run Locally From Source
+
+Run any command without installing:
+
+```sh
+go run ./cmd/gzy version
+go run ./cmd/gzy init
+go run ./cmd/gzy list
+```
+
+Or build once and install into a directory on your `PATH`:
+
+```sh
+# Build a binary
+go build -o ./dist/gzy ./cmd/gzy
+
+# Option A: drop it on your PATH
+install ./dist/gzy ~/.local/bin/gzy   # macOS/Linux
+gzy version
+
+# Option B: run in place
+./dist/gzy version
+./dist/gzy init
+```
+
+After `gzy init` (or `gzy install` when you already have a config), the generated `git-<alias>` wrappers land in your platform bin directory (`~/.local/bin` on Linux, `~/bin` on macOS/Windows by default). Make sure that directory is on your `PATH`:
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"   # add to ~/.zshrc or ~/.bashrc
+git-p status                            # invokes the freshly generated wrapper
+```
+
 ## Test Locally
 
 Build the binary and exercise it against a temporary config without touching your real one:
