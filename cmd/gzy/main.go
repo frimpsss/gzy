@@ -8,7 +8,10 @@ import (
 	"github.com/frimpsss/gzy/internal/paths"
 )
 
-var version = "dev"
+var (
+	version               = "dev"
+	defaultGitHubClientID = ""
+)
 
 func main() {
 	p := paths.FromOS()
@@ -20,6 +23,10 @@ func main() {
 	if binDir == "" {
 		binDir = p.BinDir()
 	}
+	clientID := os.Getenv("GZY_GITHUB_CLIENT_ID")
+	if clientID == "" {
+		clientID = defaultGitHubClientID
+	}
 	exe, err := os.Executable()
 	if err != nil {
 		exe = "gzy"
@@ -30,7 +37,7 @@ func main() {
 			ConfigPath:     configPath,
 			BinDir:         binDir,
 			GZYPath:        exe,
-			GitHubClientID: os.Getenv("GZY_GITHUB_CLIENT_ID"),
+			GitHubClientID: clientID,
 		}),
 	}
 	os.Exit(cli.Run(os.Args[1:], os.Stdout, os.Stderr, deps))

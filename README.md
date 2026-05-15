@@ -63,27 +63,33 @@ go build ./cmd/gzy
 
 Run any command without installing:
 
-
-t
 ```sh
 go run ./cmd/gzy version
 go run ./cmd/gzy init
 go run ./cmd/gzy list
 ```
 
-Or build once and install into a directory on your `PATH`:
+### Install locally with one script
 
 ```sh
-# Build a binary
-go build -o ./dist/gzy ./cmd/gzy
-
-# Option A: drop it on your PATH
-install ./dist/gzy ~/.local/bin/gzy   # macOS/Linux
+cp .env.example .env.local        # paste your GitHub OAuth Client ID
+./scripts/install-local.sh        # builds + drops gzy into ~/.local/bin
 gzy version
+```
 
-# Option B: run in place
-./dist/gzy version
-./dist/gzy init
+`install-local.sh` reads `.env.local` and bakes `GZY_GITHUB_CLIENT_ID` into the binary via `-ldflags`, so end-users (and you) don't need to set the env var to use the browser auth flow.
+
+Override the install location:
+
+```sh
+PREFIX=/usr/local ./scripts/install-local.sh
+```
+
+Or just build without installing:
+
+```sh
+./scripts/build.sh                # writes ./dist/gzy
+OUT=/tmp/gzy ./scripts/build.sh   # custom path
 ```
 
 After `gzy init` (or `gzy install` when you already have a config), the generated `git-<alias>` wrappers land in your platform bin directory (`~/.local/bin` on Linux, `~/bin` on macOS/Windows by default). Make sure that directory is on your `PATH`:
@@ -134,7 +140,8 @@ Environment variables for local runs:
 
 - `GZY_CONFIG` — path to the config JSON (defaults to the platform config location).
 - `GZY_BIN_DIR` — directory where `git-<alias>` wrappers are written (defaults to the platform bin location).
-- `GZY_GITHUB_CLIENT_ID` — OAuth client ID used by `gzy init` / `gzy auth` browser flow.
+- `GZY_GITHUB_CLIENT_ID` — OAuth client ID used by `gzy init` / `gzy auth` browser flow. Overrides the value baked in at build time from `.env.local`.
+- `GZY_NO_BROWSER` — when set (any value), skip auto-opening the browser for the device flow.
 
 Run a single package's tests with verbose output:
 
