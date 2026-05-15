@@ -63,6 +63,8 @@ go build ./cmd/gzy
 
 Run any command without installing:
 
+
+t
 ```sh
 go run ./cmd/gzy version
 go run ./cmd/gzy init
