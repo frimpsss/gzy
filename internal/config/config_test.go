@@ -111,6 +111,48 @@ func TestLoadMissingConfigReturnsEmptyCurrentConfig(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsPersistedInvalidAlias(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{
+  "version": 1,
+  "accounts": [
+    {
+      "alias": "../x",
+      "command": "git-../x"
+    }
+  ]
+}`), 0600); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+
+	if _, err := Load(path); err == nil {
+		t.Fatal("Load returned nil error for persisted invalid alias")
+	}
+}
+
+func TestLoadRejectsPersistedDuplicateAliases(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{
+  "version": 1,
+  "accounts": [
+    {
+      "alias": "p",
+      "command": "git-p"
+    },
+    {
+      "alias": "p",
+      "command": "git-p"
+    }
+  ]
+}`), 0600); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+
+	if _, err := Load(path); err == nil {
+		t.Fatal("Load returned nil error for persisted duplicate aliases")
+	}
+}
+
 func TestAddAccountRejectsDuplicateAlias(t *testing.T) {
 	var cfg Config
 	if err := cfg.AddAccount(Account{Alias: "p"}); err != nil {
@@ -287,5 +329,24 @@ func TestImportRejectsInvalidAlias(t *testing.T) {
 }`))
 	if err == nil {
 		t.Fatal("Import returned nil error for invalid alias")
+	}
+}
+
+func TestImportRejectsDuplicateAliases(t *testing.T) {
+	_, err := Import([]byte(`{
+  "version": 1,
+  "accounts": [
+    {
+      "alias": "p",
+      "command": "git-p"
+    },
+    {
+      "alias": "p",
+      "command": "git-p"
+    }
+  ]
+}`))
+	if err == nil {
+		t.Fatal("Import returned nil error for duplicate aliases")
 	}
 }
