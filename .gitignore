@@ -2,3 +2,4 @@ docs/*
 .claude
 .env.*
 !.env.example
+.DS_Store
