@@ -66,6 +66,37 @@ func TestSaveLoadRoundTripsConfig(t *testing.T) {
 	}
 }
 
+func TestSaveRejectsInvalidAlias(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	err := Save(path, Config{
+		Version:  CurrentVersion,
+		Accounts: []Account{{Alias: "../x", Command: "git-../x"}},
+	})
+	if err == nil {
+		t.Fatal("Save returned nil error for invalid alias")
+	}
+	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+		t.Fatalf("Save wrote config file; stat error = %v", statErr)
+	}
+}
+
+func TestSaveRejectsDuplicateAliases(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	err := Save(path, Config{
+		Version: CurrentVersion,
+		Accounts: []Account{
+			{Alias: "p", Command: "git-p"},
+			{Alias: "p", Command: "git-p"},
+		},
+	})
+	if err == nil {
+		t.Fatal("Save returned nil error for duplicate aliases")
+	}
+	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+		t.Fatalf("Save wrote config file; stat error = %v", statErr)
+	}
+}
+
 func TestLoadMissingConfigReturnsEmptyCurrentConfig(t *testing.T) {
 	got, err := Load(filepath.Join(t.TempDir(), "missing", "config.json"))
 	if err != nil {
@@ -173,6 +204,29 @@ func TestExportIncludesPrivateKeyPathButNotContents(t *testing.T) {
 	}
 }
 
+func TestExportRejectsInvalidAlias(t *testing.T) {
+	_, err := Export(Config{
+		Version:  CurrentVersion,
+		Accounts: []Account{{Alias: "../x", Command: "git-../x"}},
+	})
+	if err == nil {
+		t.Fatal("Export returned nil error for invalid alias")
+	}
+}
+
+func TestExportRejectsDuplicateAliases(t *testing.T) {
+	_, err := Export(Config{
+		Version: CurrentVersion,
+		Accounts: []Account{
+			{Alias: "p", Command: "git-p"},
+			{Alias: "p", Command: "git-p"},
+		},
+	})
+	if err == nil {
+		t.Fatal("Export returned nil error for duplicate aliases")
+	}
+}
+
 func TestImportParsesJSONAndDefaultsVersion(t *testing.T) {
 	got, err := Import([]byte(`{
   "accounts": [
@@ -198,6 +252,26 @@ func TestImportParsesJSONAndDefaultsVersion(t *testing.T) {
 	}
 	if got.Accounts[0].GitHubUser != "frimpsss" {
 		t.Fatalf("GitHubUser = %q, want %q", got.Accounts[0].GitHubUser, "frimpsss")
+	}
+}
+
+func TestImportRejectsFutureVersion(t *testing.T) {
+	_, err := Import([]byte(`{
+  "version": 2,
+  "accounts": []
+}`))
+	if err == nil {
+		t.Fatal("Import returned nil error for future version")
+	}
+}
+
+func TestImportRejectsNegativeVersion(t *testing.T) {
+	_, err := Import([]byte(`{
+  "version": -1,
+  "accounts": []
+}`))
+	if err == nil {
+		t.Fatal("Import returned nil error for negative version")
 	}
 }
 

@@ -99,6 +99,9 @@ func Export(cfg Config) ([]byte, error) {
 	if cfg.Version == 0 {
 		cfg.Version = CurrentVersion
 	}
+	if err := validateConfig(cfg); err != nil {
+		return nil, err
+	}
 	return json.MarshalIndent(cfg, "", "  ")
 }
 
@@ -110,15 +113,28 @@ func Import(data []byte) (Config, error) {
 	if cfg.Version == 0 {
 		cfg.Version = CurrentVersion
 	}
+	if err := validateConfig(cfg); err != nil {
+		return Config{}, err
+	}
+	return cfg, nil
+}
+
+func validateConfig(cfg Config) error {
+	if cfg.Version < 0 {
+		return fmt.Errorf("config version %d is invalid", cfg.Version)
+	}
+	if cfg.Version > CurrentVersion {
+		return fmt.Errorf("config version %d is newer than supported version %d", cfg.Version, CurrentVersion)
+	}
 	seen := make(map[string]struct{}, len(cfg.Accounts))
 	for _, account := range cfg.Accounts {
 		if err := ValidateAlias(account.Alias); err != nil {
-			return Config{}, err
+			return err
 		}
 		if _, ok := seen[account.Alias]; ok {
-			return Config{}, fmt.Errorf("account alias %q already exists", account.Alias)
+			return fmt.Errorf("account alias %q already exists", account.Alias)
 		}
 		seen[account.Alias] = struct{}{}
 	}
-	return cfg, nil
+	return nil
 }
